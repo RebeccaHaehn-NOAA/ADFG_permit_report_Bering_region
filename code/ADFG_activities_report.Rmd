@@ -33,42 +33,58 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ## Crab pathology: check annual crab tech memo (google: afsc crab memo XXXX) # no pathology in 2024
 
-# checking for MikTeXt installation and update
-check_miktex_status <- function() {
-  # check if MiKTeX is installed (initexmf is unique to MiKTeX)
-  is_installed <- Sys.which("initexmf") != ""
+show_gui_alert <- function(title, message) {
+  # Trigger native OS dialog on Windows (works in background Knit processes)
+  if (.Platform$OS.type == "windows") {
+    utils::winDialog(type = "ok", message = paste0("=== ", title, " ===\n\n", message))
+  } else if (rstudioapi::isAvailable()) {
+    rstudioapi::showDialog(title = title, message = message)
+  }
+}
+
+check_latex_and_miktex <- function() {
   
-  if (!is_installed) {
-    if (rstudioapi::isAvailable()) {
-      rstudioapi::showDialog(
-        title   = "MiKTeX Not Found",
-        message = "Please contact OFIS/IT to install MikTeX."
-      )
-    }
-    stop("MiKTeX is not installed on this machine. Please contact OFIS/IT to install MikTeX.")
+  #  check for Latex (XeLaTeX / pdfLaTeX)
+  has_xelatex  <- Sys.which("xelatex") != ""
+  has_pdflatex <- Sys.which("pdflatex") != ""
+  
+  if (!has_xelatex && !has_pdflatex) {
+    show_gui_alert(
+      title   = "LaTeX Not Installed",
+      message = "No LaTeX engine (XeLaTeX or pdfLaTeX) was found on this system. Please contact OFIS/IT to install MiKTeX & LaTex engine."
+    )
+    stop("LaTeX engine missing. Execution halted.")
   }
   
-  # check if MiKTeX updates are pending
+  # check for MiKTeX install
+  has_miktex <- Sys.which("initexmf") != ""
+  
+  if (!has_miktex) {
+    show_gui_alert(
+      title   = "MiKTeX Not Installed",
+      message = "MiKTeX was not detected on this system. Please contact OFIS/IT to install MiKTeX."
+    )
+    stop("MiKTeX not found. Execution halted.")
+  }
+  
+  # check for MiKTeX updates
   update_status <- tryCatch({
     system2("mpm", args = "--check-for-updates", stdout = TRUE, stderr = TRUE)
   }, error = function(e) NULL)
   
-  # If mpm returns update package listings or indicates updates are needed
-  needs_update <- !is.null(update_status) && any(grepl("update|package", update_status, ignore.case = TRUE))
+  needs_update <- !is.null(update_status) && 
+    any(grepl("update|package", update_status, ignore.case = TRUE))
   
   if (needs_update) {
-    if (rstudioapi::isAvailable()) {
-      rstudioapi::showDialog(
-        title   = "MiKTeX Update Required",
-        message = "Please update MikTeX."
-      )
-    }
-    warning("MiKTeX updates are available. Open MiKTeX Console to update.")
+    show_gui_alert(
+      title   = "MiKTeX Update Required",
+      message = "Please update MiKTeX using the MiKTeX Console before knitting this report."
+    )
   }
 }
 
-# Run MiKTeX check
-check_miktex_status()
+# Run environment checks
+check_latex_and_miktex()
 ```
 
 ```{r setup, include=FALSE}
