@@ -35,53 +35,114 @@ params:
 
 
 # ==============================================================================
-# WINDOWS BACKGROUND-KNIT COMPATIBLE SYSTEM DIALOG HELPERS
+# WINDOWS TOP-MOST GUI DIALOG HELPERS (FILE-BASED, QUOTE-SAFE)
 # ==============================================================================
 
-# Native OK alert box (System Modal - forces focus on top of RStudio)
+# 1. Top-most OK Alert Box
 show_gui_alert <- function(title, message) {
   if (.Platform$OS.type == "windows") {
-    tf <- tempfile(fileext = ".vbs")
-    clean_msg   <- gsub('"', '""', message)
-    clean_msg   <- gsub('\r?\n', '" & vbCrLf & "', clean_msg)
-    clean_title <- gsub('"', '""', title)
+    tf <- tempfile(fileext = ".ps1")
+    ps_msg   <- gsub("'", "''", message)
+    ps_title <- gsub("'", "''", title)
     
-    vbs_code <- paste0('MsgBox "', clean_msg, '", 48 + 262144, "', clean_title, '"')
-    writeLines(vbs_code, tf)
-    system2("wscript", args = c("//Nologo", tf), wait = TRUE)
+    ps_code <- c(
+      'Add-Type -AssemblyName System.Windows.Forms',
+      '[System.Windows.Forms.MessageBox]::Show(',
+      paste0("  '", ps_msg, "',"),
+      paste0("  '", ps_title, "',"),
+      '  [System.Windows.Forms.MessageBoxButtons]::OK,',
+      '  [System.Windows.Forms.MessageBoxIcon]::Warning,',
+      '  [System.Windows.Forms.MessageBoxDefaultButton]::Button1,',
+      '  [System.Windows.Forms.MessageBoxOptions]::ServiceNotification',
+      ') | Out-Null'
+    )
+    writeLines(ps_code, tf)
+    system2("powershell", args = c("-NoProfile", "-sta", "-ExecutionPolicy", "Bypass", "-File", tf), stdout = FALSE, stderr = FALSE)
     if (file.exists(tf)) unlink(tf)
   } else if (rstudioapi::isAvailable()) {
     rstudioapi::showDialog(title = title, message = message)
-  } else {
-    message(paste0("=== ", title, " ===\n", message))
   }
 }
 
-# Native Yes/No prompt box (System Modal - forces focus on top of RStudio)
+# 2. Top-most Yes/No Prompt Box
 show_gui_yesno <- function(title, message) {
   if (.Platform$OS.type == "windows") {
-    tf <- tempfile(fileext = ".vbs")
-    clean_msg   <- gsub('"', '""', message)
-    clean_msg   <- gsub('\r?\n', '" & vbCrLf & "', clean_msg)
-    clean_title <- gsub('"', '""', title)
+    tf <- tempfile(fileext = ".ps1")
+    ps_msg   <- gsub("'", "''", message)
+    ps_title <- gsub("'", "''", title)
     
-    vbs_code <- c(
-      'Dim res',
-      paste0('res = MsgBox("', clean_msg, '", 4 + 32 + 262144, "', clean_title, '")'),
-      'If res = 6 Then',
-      '  WScript.Echo "YES"',
-      'Else',
-      '  WScript.Echo "NO"',
-      'End If'
+    ps_code <- c(
+      'Add-Type -AssemblyName System.Windows.Forms',
+      '$res = [System.Windows.Forms.MessageBox]::Show(',
+      paste0("  '", ps_msg, "',"),
+      paste0("  '", ps_title, "',"),
+      '  [System.Windows.Forms.MessageBoxButtons]::YesNo,',
+      '  [System.Windows.Forms.MessageBoxIcon]::Question,',
+      '  [System.Windows.Forms.MessageBoxDefaultButton]::Button1,',
+      '  [System.Windows.Forms.MessageBoxOptions]::ServiceNotification',
+      ')',
+      'Write-Output $res'
     )
-    writeLines(vbs_code, tf)
-    res <- system2("cscript", args = c("//Nologo", tf), stdout = TRUE, stderr = FALSE)
+    writeLines(ps_code, tf)
+    res <- system2("powershell", args = c("-NoProfile", "-sta", "-ExecutionPolicy", "Bypass", "-File", tf), stdout = TRUE, stderr = FALSE)
     if (file.exists(tf)) unlink(tf)
-    return(any(grepl("YES", res, ignore.case = TRUE)))
+    return(any(grepl("Yes", res, ignore.case = TRUE)))
   } else if (rstudioapi::isAvailable()) {
     return(rstudioapi::showQuestion(title = title, message = message, ok = "Yes", cancel = "No"))
   }
   return(TRUE)
+}
+
+# 3. Top-most Text Input Prompt Box
+show_gui_prompt <- function(title, message, default = "") {
+  if (.Platform$OS.type == "windows") {
+    tf <- tempfile(fileext = ".ps1")
+    
+    ps_msg     <- gsub("'", "''", message)
+    ps_title   <- gsub("'", "''", title)
+    ps_default <- gsub("'", "''", default)
+    
+    ps_code <- c(
+      'Add-Type -AssemblyName System.Windows.Forms',
+      'Add-Type -AssemblyName System.Drawing',
+      '$form = New-Object System.Windows.Forms.Form',
+      paste0("$form.Text = '", ps_title, "'"),
+      '$form.Size = New-Object System.Drawing.Size(440,260)',       '$form.StartPosition = "CenterScreen"',
+      '$form.TopMost =$true',
+      '$form.FormBorderStyle = "FixedDialog"',
+      '$form.MaximizeBox =$false',
+      '$form.MinimizeBox =$false',
+      '$label = New-Object System.Windows.Forms.Label',
+      '$label.Location = New-Object System.Drawing.Point(15,15)',       '$label.Size = New-Object System.Drawing.Size(390,80)',
+      paste0("$label.Text = '", ps_msg, "'"),
+      '$form.Controls.Add($label)',
+      '$textBox = New-Object System.Windows.Forms.TextBox',
+      '$textBox.Location = New-Object System.Drawing.Point(15,105)',       '$textBox.Size = New-Object System.Drawing.Size(390,20)',
+      paste0("$textBox.Text = '", ps_default, "'"),
+      '$form.Controls.Add($textBox)',
+      '$okButton = New-Object System.Windows.Forms.Button',
+      '$okButton.Location = New-Object System.Drawing.Point(325,145)',
+      '$okButton.Size = New-Object System.Drawing.Size(80,30)',       '$okButton.Text = "OK"',
+      '$okButton.DialogResult = [System.Windows.Forms.DialogResult]::OK',
+      '$form.AcceptButton =$okButton',
+      '$form.Controls.Add($okButton)',
+      '$form.Add_Shown({ $textBox.Select();$form.Activate() })',
+      '$result =$form.ShowDialog()',
+      'if ($result -eq [System.Windows.Forms.DialogResult]::OK) {',
+      '    Write-Output $textBox.Text',
+      '} else {',
+      paste0("    Write-Output '", ps_default, "'"),
+      '}'
+    )
+    
+    writeLines(ps_code, tf)
+    res <- system2("powershell", args = c("-NoProfile", "-sta", "-ExecutionPolicy", "Bypass", "-File", tf), stdout = TRUE, stderr = FALSE)
+    if (file.exists(tf)) unlink(tf)
+    return(trimws(paste(res, collapse = "\n")))
+  } else if (rstudioapi::isAvailable()) {
+    return(rstudioapi::showPrompt(title = title, message = message, default = default))
+  }
+  return(default)
 }
 
 # ==============================================================================
@@ -89,7 +150,6 @@ show_gui_yesno <- function(title, message) {
 # ==============================================================================
 check_latex_and_miktex <- function() {
   
-  # Check LaTeX Engine
   has_xelatex  <- Sys.which("xelatex") != ""
   has_pdflatex <- Sys.which("pdflatex") != ""
   
@@ -101,7 +161,6 @@ check_latex_and_miktex <- function() {
     stop("LaTeX engine missing. Execution halted.")
   }
   
-  # Check MiKTeX
   has_miktex <- Sys.which("initexmf") != ""
   
   if (!has_miktex) {
@@ -112,7 +171,6 @@ check_latex_and_miktex <- function() {
     stop("MiKTeX not found. Execution halted.")
   }
   
-  # Check MiKTeX Updates
   update_status <- tryCatch({
     system2("mpm", args = "--check-for-updates", stdout = TRUE, stderr = TRUE)
   }, error = function(e) NULL)
@@ -130,7 +188,6 @@ check_latex_and_miktex <- function() {
 
 # Run LaTeX/MiKTeX check first
 check_latex_and_miktex()
-
 
 # ==============================================================================
 # 2. YAML PARAMETER CHECK (RUNS SECOND)
@@ -192,19 +249,15 @@ channel <- odbcConnect(dsn = "AFSC",
 
 # Returns TRUE if user clicks 'Yes', FALSE if 'No'
   # Pop-up for NBS to be included in report
-  include_NBS <- rstudioapi::showQuestion(
-    title   = "Survey Region",
-    message = "Do you want to include the NBS in this report?",
-    ok      = "Yes",
-    cancel  = "No"
-  )
+include_NBS <- show_gui_yesno(
+  title   = "Northern Bering Sea (NBS) Survey",
+  message = "Was the Northern Bering Sea (NBS) survey conducted during this report year?"
+)
   
   # Pop-up for Crab resample y/n
-  include_crab_resample <- rstudioapi::showQuestion(
-    title   = "Crab Resample",
-    message = "Was there a crab resample this year?",
-    ok      = "Yes",
-    cancel  = "No"
+include_crab_resample <- show_gui_yesno(
+  title   = "Crab Resample",
+  message = "Was there a crab resample this year?"
   )
 
 ```
@@ -426,7 +479,7 @@ if (include_crab_resample) {
 ## haul_table only contains gear type 44, which excludes special project (ie: beam trawls)
 ## More details on special project hauls are located on haul form hard copies
 
-EBS_special_project_hauls <-  haul_table %>%
+special_project_hauls <-  haul_table %>%
   filter(YEAR == params$year, HAUL_TYPE != 3, HAUL_TYPE != 17, HAUL_TYPE != 0, 
          PERFORMANCE >= 0, SURVEY_DEFINITION_ID == 98) %>%
   tally()
@@ -643,15 +696,13 @@ collect_stomach_data <- function(region_name, core_codes, species_df, force_repr
   # check if cached data exists for the current year
   # this allows for skipping species code and count entry if it's already been done during the current R session
   if (file.exists(cache_file) && !force_reprompt) {
-  # If cache exists, ask user if they want to overwrite or keep existing counts
-  reprompt_stomach_counts <- rstudioapi::showQuestion(
-    title = "Stomach Data Entry",
-    message = paste0("Cached stomach counts found for ", region_name, " (", params$year, "). Do you want to re-enter counts?"),
-    ok = "Yes",
-    cancel = "No"
-  )
-  
-  # if user selected "No", load and return cached data immediately
+    # If cache exists, ask user if they want to overwrite or keep existing counts
+    reprompt_stomach_counts <- show_gui_yesno(
+      title = "Stomach Data Entry",
+      message = paste0("Cached stomach counts found for ", region_name, " (", params$year, "). Do you want to re-enter counts?")
+    )
+    
+    # if user selected "No", load and return cached data immediately
     if (!reprompt_stomach_counts) {
       message("--> Loading cached ", region_name, " stomach counts from: ", cache_file)
       return(readRDS(cache_file))
@@ -661,7 +712,7 @@ collect_stomach_data <- function(region_name, core_codes, species_df, force_repr
   # check if cache exists and if re-prompt = Y (to re-enter data)
   message("--> Launching pop-up prompts for ", region_name, " stomach counts...")
   
-  add_codes_str <- rstudioapi::showPrompt(
+  add_codes_str <- show_gui_prompt(
     title = paste(region_name, "Non-Core Stomach Species"),
     message = paste0(
       "Enter additional SPECIES_CODEs for ", region_name, " separated by commas (leave blank if none).\n\n",
@@ -690,7 +741,7 @@ collect_stomach_data <- function(region_name, core_codes, species_df, force_repr
     c_name  <- target_species$COMMON_NAME[i]
     s_name  <- target_species$SPECIES_NAME[i]
     
-    cnt_input <- rstudioapi::showPrompt(
+    cnt_input <- show_gui_prompt(
       title = paste0(region_name, " Stomach Count (", i, "/", nrow(target_species), ")"),
       message = paste0(
         "Enter ", region_name, " stomach count for:\n", 
@@ -822,15 +873,15 @@ voucher_count <- vouchers_filter %>%
 
 # Results:
 \raggedright
-The FV *`r vessel_info_clean$vessel_name[1]`* and FV *`r vessel_info_clean$vessel_name[2]`* conducted `r EBS_good_hauls + EBS_bad_hauls` bottom trawls during the standard EBS survey`r if (include_NBS) " and `r NBS_good_hauls + NBS_bad_hauls` in the NBS"`. Of those trawls, `r EBS_bad_hauls``r if (include_NBS) " and `r NBS_bad_hauls` in the NBS"` were determined to have unsatisfactory performance, resulting in retowing at those stations for acceptable performance. A further `r special_project_hauls` tows were conducted to support special projects including survey modernization efforts and testing upgraded Marport sensors.
+The FV *`r vessel_info_clean$vessel_name[1]`* and FV *`r vessel_info_clean$vessel_name[2]`* conducted `r EBS_good_hauls + EBS_bad_hauls` bottom trawls during the standard EBS survey`r if (include_NBS) paste0(" and ", NBS_good_hauls + NBS_bad_hauls," in the NBS") else "."`. Of those trawls, `r EBS_bad_hauls``r if (include_NBS) paste0(" and ", NBS_bad_hauls, " in the NBS") else ""` were determined to have unsatisfactory performance, resulting in retowing at those stations for acceptable performance. A further `r special_project_hauls` tows were conducted to support special projects including survey modernization efforts and testing upgraded Marport sensors.
 
 
-During the standard EBS survey, the scientific crew recorded `r prettyNum(EBS_lengths, big.mark = ",")` randomly selected length measurements by sex from priority fish species. `r if (include_NBS) "A total of `r prettyNum(NBS_lengths, big.mark = ",")` lengths were collected during the NBS survey using the same methodology.`Additionally, `r prettyNum(EBS_crab_measurements, big.mark = ",")` crab measurements (lengths/widths) were collected in the EBS`r `if (include_NBS) "and `r prettyNum(NBS_crab_widths, big.mark = ",")` in the NBS`. Shell conditions were assessed as well. Sagittal otoliths were extracted from `r prettyNum(EBS_oto_total, big.mark=",")` fish from `r tally(EBS_otos)` targeted species in the EBS`r if(include_NBS) " and `r prettyNum(NBS_oto_total, big.mark=",")` fish in the NBS representing `r tally(NBS_otos)` species`. Correlated length/weight measurements were recorded during otolith collection. A total of `r prettyNum(EBS_stomach_total, big.mark = ",")` fish stomachs from the EBS `r if(include_NBS) " and `r prettyNum(NBS_stomach_count, big.mark = ",")` from the NBS` were extracted and preserved for food habits analysis.
+During the standard EBS survey, the scientific crew recorded `r prettyNum(EBS_lengths, big.mark = ",")` randomly selected length measurements by sex from priority fish species. `r if (include_NBS) paste0("A total of ", prettyNum(NBS_lengths, big.mark = ","), " lengths were collected during the NBS survey using the same methodology. ") else ""`Additionally, `r prettyNum(EBS_crab_measurements, big.mark = ",")` crab measurements (lengths/widths) were collected in the EBS `r if (include_NBS) paste0("and ", prettyNum(NBS_crab_widths, big.mark = ","), " in the NBS") else ""`. Shell conditions were assessed as well. Sagittal otoliths were extracted from `r prettyNum(EBS_oto_total, big.mark=",")` fish from `r tally(EBS_otos)` targeted species in the EBS`r if (include_NBS) paste0(" and ", prettyNum(NBS_oto_total, big.mark=","), " fish in the NBS representing ", tally(NBS_otos), " species") else ""`. Correlated length/weight measurements were recorded during otolith collection. A total of `r prettyNum(EBS_stomach_total, big.mark = ",")` fish stomachs from the EBS`r if (include_NBS) paste0(" and ", prettyNum(NBS_stomach_count, big.mark = ","), " from the NBS") else ""` were extracted and preserved for food habits analysis.
 
 
 Whole specimens of selected fish and invertebrate species were preserved for use in identification training programs and other research. Various tissue samples were removed and preserved for approved research projects. A total of `r prettyNum(num_fishinvert_count, big.mark=",")` fish and invertebrate taxa were identified in catches within the 3-mile territorial waters (Table 1), and `r prettyNum(voucher_count, big.mark=",")` voucher specimens were collected (Table 2).
 
-`r if (include_NBS) "No tows conducted in the NBS were located within 3 miles of the Alaskan coastline.`
+`r if (include_NBS) "No tows conducted in the NBS were located within 3 miles of the Alaskan coastline." else ""`
 
 \newpage
 ```{r, results="asis", echo=F, message=F, warning=F}
