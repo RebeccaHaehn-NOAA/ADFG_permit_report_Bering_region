@@ -25,7 +25,7 @@ params:
 ---
 
 ```{r checking_apps, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+#knitr::opts_chunk$set(echo = TRUE)
 
 ## READ ME:  
 ## Update year, iphc otolith count & crab measurements in YAML; if necessary: permit number, vessel and vessel length
@@ -33,41 +33,60 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ## Crab pathology: check annual crab tech memo (google: afsc crab memo XXXX) # no pathology in 2024
 
-# Top-most OK alert box- this forces popup windows during knit 
-show_forced_alert <- function(title, message) {
+
+# ==============================================================================
+# WINDOWS BACKGROUND-KNIT COMPATIBLE SYSTEM DIALOG HELPERS
+# ==============================================================================
+
+# Native OK alert box (System Modal - forces focus on top of RStudio)
+show_gui_alert <- function(title, message) {
   if (.Platform$OS.type == "windows") {
-    clean_msg   <- gsub('"', '`"', message)
-    clean_title <- gsub('"', '`"', title)
+    tf <- tempfile(fileext = ".vbs")
+    clean_msg   <- gsub('"', '""', message)
+    clean_msg   <- gsub('\r?\n', '" & vbCrLf & "', clean_msg)
+    clean_title <- gsub('"', '""', title)
     
-    ps_cmd <- sprintf(
-      'Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.MessageBox]::Show("%s", "%s", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning, [System.Windows.Forms.MessageBoxDefaultButton]::Button1, [System.Windows.Forms.MessageBoxOptions]::ServiceNotification)',
-      clean_msg, clean_title
-    )
-    system2("powershell", args = c("-NoProfile", "-Command", sprintf('"%s"', ps_cmd)), stdout = FALSE, stderr = FALSE)
+    vbs_code <- paste0('MsgBox "', clean_msg, '", 48 + 262144, "', clean_title, '"')
+    writeLines(vbs_code, tf)
+    system2("wscript", args = c("//Nologo", tf), wait = TRUE)
+    if (file.exists(tf)) unlink(tf)
   } else if (rstudioapi::isAvailable()) {
     rstudioapi::showDialog(title = title, message = message)
+  } else {
+    message(paste0("=== ", title, " ===\n", message))
   }
 }
 
-# Top-most Yes/No prompt box
-show_forced_yesno <- function(title, message) {
+# Native Yes/No prompt box (System Modal - forces focus on top of RStudio)
+show_gui_yesno <- function(title, message) {
   if (.Platform$OS.type == "windows") {
-    clean_msg   <- gsub('"', '`"', message)
-    clean_title <- gsub('"', '`"', title)
+    tf <- tempfile(fileext = ".vbs")
+    clean_msg   <- gsub('"', '""', message)
+    clean_msg   <- gsub('\r?\n', '" & vbCrLf & "', clean_msg)
+    clean_title <- gsub('"', '""', title)
     
-    ps_cmd <- sprintf(
-      'Add-Type -AssemblyName System.Windows.Forms; $res = [System.Windows.Forms.MessageBox]::Show("\%s", "\%s", [System.Windows.Forms.MessageBoxButtons]::YesNo, [System.Windows.Forms.MessageBoxIcon]::Question, [System.Windows.Forms.MessageBoxDefaultButton]::Button1, [System.Windows.Forms.MessageBoxOptions]::ServiceNotification); Write-Output $res',
-      clean_msg, clean_title
+    vbs_code <- c(
+      'Dim res',
+      paste0('res = MsgBox("', clean_msg, '", 4 + 32 + 262144, "', clean_title, '")'),
+      'If res = 6 Then',
+      '  WScript.Echo "YES"',
+      'Else',
+      '  WScript.Echo "NO"',
+      'End If'
     )
-    res <- system2("powershell", args = c("-NoProfile", "-Command", sprintf('"%s"', ps_cmd)), stdout = TRUE, stderr = FALSE)
-    return(any(grepl("Yes", res, ignore.case = TRUE)))
+    writeLines(vbs_code, tf)
+    res <- system2("cscript", args = c("//Nologo", tf), stdout = TRUE, stderr = FALSE)
+    if (file.exists(tf)) unlink(tf)
+    return(any(grepl("YES", res, ignore.case = TRUE)))
   } else if (rstudioapi::isAvailable()) {
     return(rstudioapi::showQuestion(title = title, message = message, ok = "Yes", cancel = "No"))
   }
   return(TRUE)
 }
 
-# check for latex and miktex installation
+# ==============================================================================
+# 1. LATEX & MIKTEX ENVIRONMENT CHECKS (RUNS FIRST)
+# ==============================================================================
 check_latex_and_miktex <- function() {
   
   # Check LaTeX Engine
@@ -75,9 +94,9 @@ check_latex_and_miktex <- function() {
   has_pdflatex <- Sys.which("pdflatex") != ""
   
   if (!has_xelatex && !has_pdflatex) {
-    show_forced_alert(
+    show_gui_alert(
       title   = "LaTeX Not Installed",
-      message = "No LaTeX engine (XeLaTeX or pdfLaTeX) was found on this system.\n\nPlease contact OFIS/IT to install LaTex"
+      message = "No LaTeX engine (XeLaTeX or pdfLaTeX) was found on this system.\n\nPlease contact OFIS/IT to install MiKTeX."
     )
     stop("LaTeX engine missing. Execution halted.")
   }
@@ -86,7 +105,7 @@ check_latex_and_miktex <- function() {
   has_miktex <- Sys.which("initexmf") != ""
   
   if (!has_miktex) {
-    show_forced_alert(
+    show_gui_alert(
       title   = "MiKTeX Not Installed",
       message = "MiKTeX was not detected on this system.\n\nPlease contact OFIS/IT to install MiKTeX."
     )
@@ -102,7 +121,7 @@ check_latex_and_miktex <- function() {
     any(grepl("update|package", update_status, ignore.case = TRUE))
   
   if (needs_update) {
-    show_forced_alert(
+    show_gui_alert(
       title   = "MiKTeX Update Required",
       message = "Updates are available for MiKTeX.\n\nPlease open MiKTeX Console and update packages before knitting."
     )
@@ -111,7 +130,25 @@ check_latex_and_miktex <- function() {
 
 # Run LaTeX/MiKTeX check first
 check_latex_and_miktex()
+
+
+# ==============================================================================
+# 2. YAML PARAMETER CHECK (RUNS SECOND)
+# ==============================================================================
+params_confirmed <- show_gui_yesno(
+  title   = "YAML Parameter Check",
+  message = "Have the YAML parameters ('params:' at the top of the script) been updated for the year for which you are running the report?"
+)
+
+if (!params_confirmed) {
+  show_gui_alert(
+    title   = "Parameters Not Updated",
+    message = "Please update the YAML parameters at the top of the document and then knit the report again."
+  )
+  stop("Execution halted: YAML parameters not updated.")
+}
 ```
+
 
 ```{r setup, include=FALSE}
 library(knitr)
@@ -124,18 +161,18 @@ library(tidyverse)
 library(janitor)
 
 # check if YAML parameters have been updated for the current year or the year for which you are running the report
-if (rstudioapi::isAvailable()) {
-  params_updated <- rstudioapi::showQuestion(
-    title   = "YAML Parameter Check",
-    message = 'Have the YAML parameters ("params:" at the top of the script) been updated for the year for which you are running the report?',
-    ok      = "Yes",
-    cancel  = "No"
-  )
-  
-  if (!params_updated) {
-    stop("Please update parameters and then knit the report.")
-  }
-}
+# if (rstudioapi::isAvailable()) {
+#   params_updated <- rstudioapi::showQuestion(
+#     title   = "YAML Parameter Check",
+#     message = 'Have the YAML parameters ("params:" at the top of the script) been updated for the year for which you are running the report?',
+#     ok      = "Yes",
+#     cancel  = "No"
+#   )
+#   
+#   if (!params_updated) {
+#     stop("Please update parameters and then knit the report.")
+#   }
+# }
 
 ## make sure you are connected to VPN first (and have Oracle database login)
 ## if an error occurs, log into Oracle SQL developer and make sure your password is not expired
