@@ -33,41 +33,67 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ## Crab pathology: check annual crab tech memo (google: afsc crab memo XXXX) # no pathology in 2024
 
-show_gui_alert <- function(title, message) {
-  # Trigger native OS dialog on Windows (works in background Knit processes)
+# Top-most OK alert box- this forces popup windows during knit 
+show_forced_alert <- function(title, message) {
   if (.Platform$OS.type == "windows") {
-    utils::winDialog(type = "ok", message = paste0("=== ", title, " ===\n\n", message))
+    clean_msg   <- gsub('"', '`"', message)
+    clean_title <- gsub('"', '`"', title)
+    
+    ps_cmd <- sprintf(
+      'Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.MessageBox]::Show("%s", "%s", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning, [System.Windows.Forms.MessageBoxDefaultButton]::Button1, [System.Windows.Forms.MessageBoxOptions]::ServiceNotification)',
+      clean_msg, clean_title
+    )
+    system2("powershell", args = c("-NoProfile", "-Command", sprintf('"%s"', ps_cmd)), stdout = FALSE, stderr = FALSE)
   } else if (rstudioapi::isAvailable()) {
     rstudioapi::showDialog(title = title, message = message)
   }
 }
 
+# Top-most Yes/No prompt box
+show_forced_yesno <- function(title, message) {
+  if (.Platform$OS.type == "windows") {
+    clean_msg   <- gsub('"', '`"', message)
+    clean_title <- gsub('"', '`"', title)
+    
+    ps_cmd <- sprintf(
+      'Add-Type -AssemblyName System.Windows.Forms; $res = [System.Windows.Forms.MessageBox]::Show("\%s", "\%s", [System.Windows.Forms.MessageBoxButtons]::YesNo, [System.Windows.Forms.MessageBoxIcon]::Question, [System.Windows.Forms.MessageBoxDefaultButton]::Button1, [System.Windows.Forms.MessageBoxOptions]::ServiceNotification); Write-Output $res',
+      clean_msg, clean_title
+    )
+    res <- system2("powershell", args = c("-NoProfile", "-Command", sprintf('"%s"', ps_cmd)), stdout = TRUE, stderr = FALSE)
+    return(any(grepl("Yes", res, ignore.case = TRUE)))
+  } else if (rstudioapi::isAvailable()) {
+    return(rstudioapi::showQuestion(title = title, message = message, ok = "Yes", cancel = "No"))
+  }
+  return(TRUE)
+}
+
+# check for latex and miktex installation
 check_latex_and_miktex <- function() {
   
-  #  check for Latex (XeLaTeX / pdfLaTeX)
+  # Check LaTeX Engine
   has_xelatex  <- Sys.which("xelatex") != ""
   has_pdflatex <- Sys.which("pdflatex") != ""
   
   if (!has_xelatex && !has_pdflatex) {
-    show_gui_alert(
+    show_forced_alert(
       title   = "LaTeX Not Installed",
-      message = "No LaTeX engine (XeLaTeX or pdfLaTeX) was found on this system. Please contact OFIS/IT to install MiKTeX & LaTex engine."
+      message = "No LaTeX engine (XeLaTeX or pdfLaTeX) was found on this system.\n\nPlease contact OFIS/IT to install LaTex"
     )
     stop("LaTeX engine missing. Execution halted.")
   }
   
-  # check for MiKTeX install
+  # Check MiKTeX
   has_miktex <- Sys.which("initexmf") != ""
   
   if (!has_miktex) {
-    show_gui_alert(
+    show_forced_alert(
       title   = "MiKTeX Not Installed",
-      message = "MiKTeX was not detected on this system. Please contact OFIS/IT to install MiKTeX."
+      message = "MiKTeX was not detected on this system.\n\nPlease contact OFIS/IT to install MiKTeX."
     )
     stop("MiKTeX not found. Execution halted.")
   }
   
-  # check for MiKTeX updates
+  # Check MiKTeX Updates
   update_status <- tryCatch({
     system2("mpm", args = "--check-for-updates", stdout = TRUE, stderr = TRUE)
   }, error = function(e) NULL)
@@ -76,14 +102,14 @@ check_latex_and_miktex <- function() {
     any(grepl("update|package", update_status, ignore.case = TRUE))
   
   if (needs_update) {
-    show_gui_alert(
+    show_forced_alert(
       title   = "MiKTeX Update Required",
-      message = "Please update MiKTeX using the MiKTeX Console before knitting this report."
+      message = "Updates are available for MiKTeX.\n\nPlease open MiKTeX Console and update packages before knitting."
     )
   }
 }
 
-# Run environment checks
+# Run LaTeX/MiKTeX check first
 check_latex_and_miktex()
 ```
 
