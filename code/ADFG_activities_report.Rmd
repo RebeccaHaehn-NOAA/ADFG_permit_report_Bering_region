@@ -681,8 +681,7 @@ EBS_resurvey_measurements <-  params$crabmeasurements_count_resurvey
 
 ```
 
-```{r stomach, echo = F, message = F, warning = F}
-
+```{r stomach, echo = FALSE, message = FALSE, warning = FALSE}
 # stomachs -----
 # core species codes always included in stomach reporting
 # 21740: walleye Pollock | 21720: Pacific cod | 10110: arrowtooth flounder | 10112: Kamchatka flounder | 10120: Pacific halibut
@@ -694,22 +693,27 @@ collect_stomach_data <- function(region_name, core_codes, species_df, force_repr
   cache_file <- paste0(".stomach_cache_", region_name, "_", params$year, ".rds")
   
   # check if cached data exists for the current year
-  # this allows for skipping species code and count entry if it's already been done during the current R session
   if (file.exists(cache_file) && !force_reprompt) {
-    # If cache exists, ask user if they want to overwrite or keep existing counts
-    reprompt_stomach_counts <- show_gui_yesno(
-      title = "Stomach Data Entry",
-      message = paste0("Cached stomach counts found for ", region_name, " (", params$year, "). Do you want to re-enter counts?")
+    # Ask user explicitly if they want to use existing cache
+    use_cache <- show_gui_yesno(
+      title   = paste(region_name, "Stomach Data Entry"),
+      message = paste0(
+        "Cached stomach counts found for ", region_name, " (", params$year, ").\n\n",
+        "Do you want to USE the existing cached data?\n\n",
+        "(Yes = Use cache | No = Update data / enter new counts)"
+      )
     )
     
-    # if user selected "No", load and return cached data immediately
-    if (!reprompt_stomach_counts) {
+    # If user selected "Yes", load and return cached data immediately
+    if (use_cache) {
       message("--> Loading cached ", region_name, " stomach counts from: ", cache_file)
       return(readRDS(cache_file))
     }
+    
+    message("--> Bypassing cache for ", region_name, ". Prompting for new stomach counts...")
   }
   
-  # check if cache exists and if re-prompt = Y (to re-enter data)
+  # Launch prompts if cache doesn't exist OR if user chose "No" to using cache
   message("--> Launching pop-up prompts for ", region_name, " stomach counts...")
   
   add_codes_str <- show_gui_prompt(
@@ -731,8 +735,9 @@ collect_stomach_data <- function(region_name, core_codes, species_df, force_repr
 
   all_codes <- unique(c(core_codes, additional_codes[!is.na(additional_codes)]))
   
+  # Ensure robust type-matching in case SPECIES_CODE is character or factor
   target_species <- species_df %>%
-    filter(SPECIES_CODE %in% all_codes)
+    filter(as.numeric(SPECIES_CODE) %in% as.numeric(all_codes))
 
   stomach_list <- list()
 
@@ -767,7 +772,7 @@ collect_stomach_data <- function(region_name, core_codes, species_df, force_repr
   
   res <- list(summary = summary_table, total = total_table)
   
-  # save cache
+  # overwrite cache file with updated inputs
   saveRDS(res, file = cache_file)
   
   return(res)
@@ -793,10 +798,9 @@ if (include_NBS) {
   NBS_stomach_total   <- tibble(stomach_total = 0)
   
 }
-
 ```
 
-```{r, echo = F, message = F, warning = F}
+```{r voucher, echo = F, message = F, warning = F}
 #--------------------------------------------
 # catch/voucher/otolith data within in 3 mile AK territory waters
 
@@ -897,7 +901,7 @@ pander(xtable(within_3mi, caption="EBS Catch Summary Table: \\newline Within 3-m
 
 #####
 
-```{r, results="asis", echo=F, message=F, warning=F}
+```{r table1, results="asis", echo=F, message=F, warning=F}
 
 # if else code fills in zeros if no vouchers were collected in AK territory stations
 if (nrow(vouchers_filter) > 0) {
