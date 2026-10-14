@@ -93,40 +93,49 @@ show_gui_yesno <- function(title, message) {
   return(TRUE)
 }
 
-# 3. Top-most Text Input Prompt Box
+# 3. Top-most Text Input Prompt Box (Bug-Free & Foreground-Activated)
 show_gui_prompt <- function(title, message, default = "") {
   if (.Platform$OS.type == "windows") {
     tf <- tempfile(fileext = ".ps1")
     
+    # Escape single quotes and format newlines cleanly for PowerShell
     ps_msg     <- gsub("'", "''", message)
+    ps_msg     <- gsub("\r?\n", "`r`n", ps_msg)
     ps_title   <- gsub("'", "''", title)
     ps_default <- gsub("'", "''", default)
     
     ps_code <- c(
       'Add-Type -AssemblyName System.Windows.Forms',
       'Add-Type -AssemblyName System.Drawing',
+      '[System.Windows.Forms.Application]::EnableVisualStyles()',
       '$form = New-Object System.Windows.Forms.Form',
       paste0("$form.Text = '", ps_title, "'"),
-      '$form.Size = New-Object System.Drawing.Size(440,260)',       '$form.StartPosition = "CenterScreen"',
+      '$form.Size = New-Object System.Drawing.Size(460, 260)', '$form.StartPosition = "CenterScreen"',
       '$form.TopMost =$true',
       '$form.FormBorderStyle = "FixedDialog"',
       '$form.MaximizeBox =$false',
       '$form.MinimizeBox =$false',
       '$label = New-Object System.Windows.Forms.Label',
-      '$label.Location = New-Object System.Drawing.Point(15,15)',       '$label.Size = New-Object System.Drawing.Size(390,80)',
+      '$label.Location = New-Object System.Drawing.Point(15, 15)', '$label.Size = New-Object System.Drawing.Size(415, 80)',
       paste0("$label.Text = '", ps_msg, "'"),
       '$form.Controls.Add($label)',
       '$textBox = New-Object System.Windows.Forms.TextBox',
-      '$textBox.Location = New-Object System.Drawing.Point(15,105)',       '$textBox.Size = New-Object System.Drawing.Size(390,20)',
+      '$textBox.Location = New-Object System.Drawing.Point(15, 105)', '$textBox.Size = New-Object System.Drawing.Size(415, 20)',
       paste0("$textBox.Text = '", ps_default, "'"),
       '$form.Controls.Add($textBox)',
       '$okButton = New-Object System.Windows.Forms.Button',
-      '$okButton.Location = New-Object System.Drawing.Point(325,145)',
-      '$okButton.Size = New-Object System.Drawing.Size(80,30)',       '$okButton.Text = "OK"',
+      '$okButton.Location = New-Object System.Drawing.Point(350, 145)',
+      '$okButton.Size = New-Object System.Drawing.Size(80, 30)', '$okButton.Text = "OK"',
       '$okButton.DialogResult = [System.Windows.Forms.DialogResult]::OK',
       '$form.AcceptButton =$okButton',
       '$form.Controls.Add($okButton)',
-      '$form.Add_Shown({ $textBox.Select();$form.Activate() })',
+      # Bring window to absolute foreground and focus text box
+      '$form.Add_Shown({',
+      '    $form.BringToFront()',
+      '    $form.Activate()',
+      '    (New-Object -ComObject WScript.Shell).AppActivate($form.Text)',
+      '    $textBox.Focus()',
+      '})',
       '$result =$form.ShowDialog()',
       'if ($result -eq [System.Windows.Forms.DialogResult]::OK) {',
       '    Write-Output $textBox.Text',
@@ -136,9 +145,19 @@ show_gui_prompt <- function(title, message, default = "") {
     )
     
     writeLines(ps_code, tf)
-    res <- system2("powershell", args = c("-NoProfile", "-sta", "-ExecutionPolicy", "Bypass", "-File", tf), stdout = TRUE, stderr = FALSE)
+    res <- system2(
+      "powershell", 
+      args = c("-NoProfile", "-sta", "-ExecutionPolicy", "Bypass", "-File", tf), 
+      stdout = TRUE, 
+      stderr = TRUE
+    )
     if (file.exists(tf)) unlink(tf)
-    return(trimws(paste(res, collapse = "\n")))
+    
+    # Filter out empty strings or warning messages from PowerShell output
+    clean_res <- res[!grepl("^\\s*$", res)]
+    if (length(clean_res) == 0) return(default)
+    return(trimws(clean_res[length(clean_res)]))
+    
   } else if (rstudioapi::isAvailable()) {
     return(rstudioapi::showPrompt(title = title, message = message, default = default))
   }
@@ -689,12 +708,10 @@ core_species <- c(21740, 21720, 10110, 10112, 10120)
 
 collect_stomach_data <- function(region_name, core_codes, species_df, force_reprompt = FALSE) {
 
-  # define cache_file 
   cache_file <- paste0(".stomach_cache_", region_name, "_", params$year, ".rds")
   
   # check if cached data exists for the current year
   if (file.exists(cache_file) && !force_reprompt) {
-    # Ask user explicitly if they want to use existing cache
     use_cache <- show_gui_yesno(
       title   = paste(region_name, "Stomach Data Entry"),
       message = paste0(
@@ -735,7 +752,8 @@ collect_stomach_data <- function(region_name, core_codes, species_df, force_repr
 
   all_codes <- unique(c(core_codes, additional_codes[!is.na(additional_codes)]))
   
-  # Ensure robust type-matching in case SPECIES_CODE is character or factor
+  # Robust case-insensitive and numeric matching for species_df
+  names(species_df) <- toupper(names(species_df))
   target_species <- species_df %>%
     filter(as.numeric(SPECIES_CODE) %in% as.numeric(all_codes))
 
@@ -772,7 +790,7 @@ collect_stomach_data <- function(region_name, core_codes, species_df, force_repr
   
   res <- list(summary = summary_table, total = total_table)
   
-  # overwrite cache file with updated inputs
+  # Save/overwrite cache with updated counts
   saveRDS(res, file = cache_file)
   
   return(res)
@@ -785,18 +803,12 @@ EBS_stomach_total   <- ebs_data$total
 
 # run NBS stomach data if include_NBS = TRUE
 if (include_NBS) {
-  
-  # run interactive prompts for NBS if include_NBS = TRUE
   nbs_data            <- collect_stomach_data("NBS", core_species, species_names)
   NBS_stomach_summary <- nbs_data$summary
   NBS_stomach_total   <- nbs_data$total
-
 } else {
-  
-  # fallback empty structures to prevent "object not found" errors in downstream report chunks
   NBS_stomach_summary <- tibble()
   NBS_stomach_total   <- tibble(stomach_total = 0)
-  
 }
 ```
 
