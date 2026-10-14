@@ -34,7 +34,6 @@ params:
 ## Crab pathology: check annual crab tech memo (google: afsc crab memo XXXX) # no pathology in 2024
 
 
-```{r checking_apps, include = FALSE}
 # ==============================================================================
 # WINDOWS TOP-MOST GUI DIALOG HELPERS (NATIVE WIN32 / SYSTEM-MODAL)
 # ==============================================================================
