@@ -34,71 +34,63 @@ params:
 ## Crab pathology: check annual crab tech memo (google: afsc crab memo XXXX) # no pathology in 2024
 
 
+```{r checking_apps, include = FALSE}
 # ==============================================================================
-# WINDOWS TOP-MOST GUI DIALOG HELPERS (FILE-BASED, QUOTE-SAFE)
+# WINDOWS TOP-MOST GUI DIALOG HELPERS (NATIVE WIN32 / SYSTEM-MODAL)
 # ==============================================================================
 
 # 1. Top-most OK Alert Box
 show_gui_alert <- function(title, message) {
   if (.Platform$OS.type == "windows") {
-    tf <- tempfile(fileext = ".ps1")
-    ps_msg   <- gsub("'", "''", message)
-    ps_title <- gsub("'", "''", title)
+    tf <- tempfile(fileext = ".vbs")
+    clean_msg   <- gsub('"', '""', message)
+    clean_msg   <- gsub('[\r\n]+', '" & vbCrLf & "', clean_msg)
+    clean_title <- gsub('"', '""', title)
     
-    ps_code <- c(
-      'Add-Type -AssemblyName System.Windows.Forms',
-      '[System.Windows.Forms.MessageBox]::Show(',
-      paste0("  '", ps_msg, "',"),
-      paste0("  '", ps_title, "',"),
-      '  [System.Windows.Forms.MessageBoxButtons]::OK,',
-      '  [System.Windows.Forms.MessageBoxIcon]::Warning,',
-      '  [System.Windows.Forms.MessageBoxDefaultButton]::Button1,',
-      '  [System.Windows.Forms.MessageBoxOptions]::ServiceNotification',
-      ') | Out-Null'
-    )
-    writeLines(ps_code, tf)
-    system2("powershell", args = c("-NoProfile", "-sta", "-ExecutionPolicy", "Bypass", "-File", tf), stdout = FALSE, stderr = FALSE)
+    # 48 = Warning icon, 262144 = vbSystemModal (forces window on top of RStudio)
+    vbs_code <- paste0('MsgBox "', clean_msg, '", 48 + 262144, "', clean_title, '"')
+    writeLines(vbs_code, tf)
+    system2("wscript", args = c("//Nologo", tf), wait = TRUE)
     if (file.exists(tf)) unlink(tf)
   } else if (rstudioapi::isAvailable()) {
     rstudioapi::showDialog(title = title, message = message)
+  } else {
+    message(paste0("=== ", title, " ===\n", message))
   }
 }
 
 # 2. Top-most Yes/No Prompt Box
 show_gui_yesno <- function(title, message) {
   if (.Platform$OS.type == "windows") {
-    tf <- tempfile(fileext = ".ps1")
-    ps_msg   <- gsub("'", "''", message)
-    ps_title <- gsub("'", "''", title)
+    tf <- tempfile(fileext = ".vbs")
+    clean_msg   <- gsub('"', '""', message)
+    clean_msg   <- gsub('[\r\n]+', '" & vbCrLf & "', clean_msg)
+    clean_title <- gsub('"', '""', title)
     
-    ps_code <- c(
-      'Add-Type -AssemblyName System.Windows.Forms',
-      '$res = [System.Windows.Forms.MessageBox]::Show(',
-      paste0("  '", ps_msg, "',"),
-      paste0("  '", ps_title, "',"),
-      '  [System.Windows.Forms.MessageBoxButtons]::YesNo,',
-      '  [System.Windows.Forms.MessageBoxIcon]::Question,',
-      '  [System.Windows.Forms.MessageBoxDefaultButton]::Button1,',
-      '  [System.Windows.Forms.MessageBoxOptions]::ServiceNotification',
-      ')',
-      'Write-Output $res'
+    # 4 = Yes/No buttons, 32 = Question icon, 262144 = vbSystemModal
+    vbs_code <- c(
+      'Dim res',
+      paste0('res = MsgBox("', clean_msg, '", 4 + 32 + 262144, "', clean_title, '")'),
+      'If res = 6 Then',
+      '  WScript.Echo "YES"',
+      'Else',
+      '  WScript.Echo "NO"',
+      'End If'
     )
-    writeLines(ps_code, tf)
-    res <- system2("powershell", args = c("-NoProfile", "-sta", "-ExecutionPolicy", "Bypass", "-File", tf), stdout = TRUE, stderr = FALSE)
+    writeLines(vbs_code, tf)
+    res <- system2("cscript", args = c("//Nologo", tf), stdout = TRUE, stderr = FALSE)
     if (file.exists(tf)) unlink(tf)
-    return(any(grepl("Yes", res, ignore.case = TRUE)))
+    return(any(grepl("YES", res, ignore.case = TRUE)))
   } else if (rstudioapi::isAvailable()) {
     return(rstudioapi::showQuestion(title = title, message = message, ok = "Yes", cancel = "No"))
   }
   return(TRUE)
 }
 
-# 3. Top-most Text Input Prompt Box (Native Win32 - Zero .NET Thread Locks)
+# 3. Top-most Text Input Prompt Box
 show_gui_prompt <- function(title, message, default = "") {
   if (.Platform$OS.type == "windows") {
     tf <- tempfile(fileext = ".vbs")
-    
-    # Format strings and line breaks for VBScript
     clean_msg   <- gsub('"', '""', message)
     clean_msg   <- gsub('[\r\n]+', '" & vbCrLf & "', clean_msg)
     clean_title <- gsub('"', '""', title)
@@ -110,7 +102,6 @@ show_gui_prompt <- function(title, message, default = "") {
       paste0('Dim res: res = InputBox("', clean_msg, '", "', clean_title, '", "', clean_def, '")'),
       'WScript.Echo res'
     )
-    
     writeLines(vbs_code, tf)
     res <- system2("cscript", args = c("//Nologo", tf), stdout = TRUE, stderr = FALSE)
     if (file.exists(tf)) unlink(tf)
@@ -119,7 +110,6 @@ show_gui_prompt <- function(title, message, default = "") {
       return(default)
     }
     return(trimws(res[1]))
-    
   } else if (rstudioapi::isAvailable()) {
     return(rstudioapi::showPrompt(title = title, message = message, default = default))
   }
