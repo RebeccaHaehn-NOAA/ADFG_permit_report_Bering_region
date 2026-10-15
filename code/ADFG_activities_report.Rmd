@@ -21,14 +21,14 @@ params:
   # type null or update when NBS year
   crabmeasurements_count_NBS: null
   # type null or update during crab resurvey
-  crabmeasurements_count_resurvey: null
+  crabmeasurements_count_resample: null
 ---
 
 ```{r checking_apps, include=FALSE}
 #knitr::opts_chunk$set(echo = TRUE)
 
 ## READ ME:  
-## Update year, iphc otolith count & crab measurements in YAML; if necessary: permit number, vessel and vessel length
+## Update year, iphc otolith count & crab measurements in YAML; if necessary: permit number
 ## MikTeXt must be installed and updated (must contact IT for install)
 
 ## Crab pathology: check annual crab tech memo (google: afsc crab memo XXXX) # no pathology in 2024
@@ -349,11 +349,6 @@ The Resource Assessment and Conservation Engineering (RACE) Division of the Nati
 
 The primary objectives of this survey were to provide the following: 1) data on the distribution, abundance, and biological condition of commercially important groundfish and crab species for the North Pacific Fishery Management Council, 2) catch per unit effort (CPUE) and size composition data for the commercial fisheries of the U.S., and 3) support for ongoing studies on the biology, behavior, and dynamics of key ecosystem components.  
 
-```{r methods_text, echo = FALSE, message = FALSE, warning = FALSE}
-
-```
-
-
 # Methods:
 For the standard survey, sampling at survey stations was coordinated between two chartered commercial fishing vessels, the FV *`r vessel_info_clean$vessel_name[1]`* and FV *`r vessel_info_clean$vessel_name[2]`*. Both vessels are house-forward trawlers with stern ramps. Stations were located 20 nm apart and two standard survey stations were located within Alaska state waters (F-20 and H-16). The 26 stations in high-density sampling areas previously located near the Pribilof Islands and south of St. Matthew Island were not included in the standard list of survey stations, as a recent analysis by DeFilippo *et al*. (2023) concluded that removal of these stations would have only minor impacts on the precision and accuracy of groundfish biomass estimates.  Thus, in the interest of maximizing the efficient use of survey resources, sampling was discontinued in the high-density sampling zones around St. Matthew Island and the Pribilof Islands. The current EBS survey design therefore consisted of 350 planned stations, as opposed to the 376 planned stations sampled annually prior to 2024. `r if (include_NBS) "The Northern Bering Sea survey includes 144 planned stations in a standard year."`
 
@@ -654,12 +649,19 @@ if (include_NBS) {
 
 EBS_crab_measurements <- params$crabmeasurements_count
 
+# NBS crab measurements
 if (include_NBS) {  
-EBS_resurvey_measurements <-  params$crabmeasurements_count_resurvey
+crabmeasurements_count_NBS <-  params$crabmeasurements_count_NBS
 } else {
-  EBS_resurvey_measurments <- tibble(n = 0)
+  crabmeasurements_count_NBS <- tibble(n = 0)
 }
 
+# crab resurvey measurements
+if (include_crab_resample) {  
+  crabmeasurements_count_resample <- params$crabmeasurements_count_resample
+} else {
+  crabmeasurements_count_resample <- tibble(n = 0)
+}
 ```
 
 ```{r stomach, echo = FALSE, message = FALSE, warning = FALSE}
@@ -854,6 +856,8 @@ voucher_count <- vouchers_filter %>%
 # Results:
 \raggedright
 The FV *`r vessel_info_clean$vessel_name[1]`* and FV *`r vessel_info_clean$vessel_name[2]`* conducted `r EBS_good_hauls + EBS_bad_hauls` bottom trawls during the standard EBS survey`r if (include_NBS) paste0(" and ", NBS_good_hauls + NBS_bad_hauls," in the NBS") else "."`. Of those trawls, `r EBS_bad_hauls``r if (include_NBS) paste0(" and ", NBS_bad_hauls, " in the NBS") else ""` were determined to have unsatisfactory performance, resulting in retowing at those stations for acceptable performance. A further `r special_project_hauls` tows were conducted to support special projects including survey modernization efforts and testing upgraded Marport sensors.
+
+`r if (include_crab_resample) paste0("A crab resurvey was conduected in", toString(params$year). During the resurvey, the same vessles completed resurvey_good_hauls + resurvey_bad_hauls. Of those hauls, resurvey_bad_hauls tows tows during the crab resurvey were determined to have unsatisfactory performace."`
 
 
 During the standard EBS survey, the scientific crew recorded `r prettyNum(EBS_lengths, big.mark = ",")` randomly selected length measurements by sex from priority fish species. `r if (include_NBS) paste0("A total of ", prettyNum(NBS_lengths, big.mark = ","), " lengths were collected during the NBS survey using the same methodology. ") else ""`Additionally, `r prettyNum(EBS_crab_measurements, big.mark = ",")` crab measurements (lengths/widths) were collected in the EBS `r if (include_NBS) paste0("and ", prettyNum(NBS_crab_widths, big.mark = ","), " in the NBS") else ""`. Shell conditions were assessed as well. Sagittal otoliths were extracted from `r prettyNum(EBS_oto_total, big.mark=",")` fish from `r tally(EBS_otos)` targeted species in the EBS`r if (include_NBS) paste0(" and ", prettyNum(NBS_oto_total, big.mark=","), " fish in the NBS representing ", tally(NBS_otos), " species") else ""`. Correlated length/weight measurements were recorded during otolith collection. A total of `r prettyNum(EBS_stomach_total, big.mark = ",")` fish stomachs from the EBS`r if (include_NBS) paste0(" and ", prettyNum(NBS_stomach_count, big.mark = ","), " from the NBS") else ""` were extracted and preserved for food habits analysis.
