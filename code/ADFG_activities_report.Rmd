@@ -34,9 +34,8 @@ params:
 ## Crab pathology: check annual crab tech memo (google: afsc crab memo XXXX) # no pathology in 2024
 
 
-# ==============================================================================
+## Set up prompt boxes so they appear on top of the R studio interface
 # WINDOWS TOP-MOST GUI DIALOG HELPERS (NATIVE WIN32 / SYSTEM-MODAL)
-# ==============================================================================
 
 # 1. Top-most OK Alert Box
 show_gui_alert <- function(title, message) {
@@ -115,9 +114,7 @@ show_gui_prompt <- function(title, message, default = "") {
   return(default)
 }
 
-# ==============================================================================
-# 1. LATEX & MIKTEX ENVIRONMENT CHECKS (RUNS FIRST)
-# ==============================================================================
+## check for LaTeX and MikTeX installations & updates
 check_latex_and_miktex <- function() {
   
   has_xelatex  <- Sys.which("xelatex") != ""
@@ -156,15 +153,13 @@ check_latex_and_miktex <- function() {
   }
 }
 
-# Run LaTeX/MiKTeX check first
+# run LaTeX/MiKTeX check first
 check_latex_and_miktex()
 
-# ==============================================================================
-# 2. YAML PARAMETER CHECK (RUNS SECOND)
-# ==============================================================================
+# check if YAML parameters have been updated to current year by user
 params_confirmed <- show_gui_yesno(
   title   = "YAML Parameter Check",
-  message = "Have the YAML parameters ('params:' at the top of the script) been updated for the year for which you are running the report?"
+  message = "Have the 7 YAML parameters ('params:' at the top of the script) been updated for the year for which you are running the report?"
 )
 
 if (!params_confirmed) {
@@ -187,28 +182,44 @@ library(rstudioapi)# for Oracle GUI interface
 library(tidyverse)
 library(janitor)
 
-# check if YAML parameters have been updated for the current year or the year for which you are running the report
-# if (rstudioapi::isAvailable()) {
-#   params_updated <- rstudioapi::showQuestion(
-#     title   = "YAML Parameter Check",
-#     message = 'Have the YAML parameters ("params:" at the top of the script) been updated for the year for which you are running the report?',
-#     ok      = "Yes",
-#     cancel  = "No"
-#   )
-#   
-#   if (!params_updated) {
-#     stop("Please update parameters and then knit the report.")
-#   }
-# }
-
 ## make sure you are connected to VPN first (and have Oracle database login)
 ## if an error occurs, log into Oracle SQL developer and make sure your password is not expired
-channel <- odbcConnect(dsn = "AFSC", 
-                       uid = rstudioapi::showPrompt(title = "Username", 
-                                                    message = "Oracle Username", default = ""), 
-                       pwd = rstudioapi::askForPassword("enter password"),
-                       believeNRows = FALSE)
+## make sure you are connected to VPN first (and have Oracle database login)
+## if an error occurs, log into Oracle SQL developer and make sure your password is not expired
 
+# Oracle connection
+channel <- tryCatch({
+  odbcConnect(
+    dsn          = "AFSC", 
+    uid          = rstudioapi::showPrompt(title = "Username", message = "Oracle Username", default = ""), 
+    pwd          = rstudioapi::askForPassword("enter password"),
+    believeNRows = FALSE
+  )
+}, error = function(e) -1)
+
+# Check if connection failed (RODBC returns -1 or non-RODBC handle on failure)
+if (!inherits(channel, "RODBC") || (is.numeric(channel) && channel == -1)) {
+  
+  # Attempt to extract ODBC driver error details if available
+  err_detail <- tryCatch({
+    paste(RODBC::odbcGetErrMsg(channel), collapse = " ")
+  }, error = function(e) "")
+  
+  show_gui_alert(
+    title   = "Oracle Database Connection Failed",
+    message = paste0(
+      "Unable to connect to the AFSC Oracle database.\n\n",
+      "Please verify the following:\n",
+      " 1. Are you connected to the VPN (Cisco Secure Client / GlobalProtect)?\n",
+      " 2. Has your Oracle database password expired or locked? (Try logging in via Oracle SQL Developer to verify or reset)\n",
+      " 3. Were your username and password entered correctly?\n\n",
+      "4. Did you run out of time? You have ~15 seconds to enter your password before the connection automatically closes.",
+      if (nzchar(err_detail)) paste0("ODBC Error Details:\n", err_detail) else ""
+    )
+  )
+  
+  stop("Execution halted: Unable to connect to Oracle database.")
+}
 ```
 
 ## Report of `r toString(params$year)` Research Activities
